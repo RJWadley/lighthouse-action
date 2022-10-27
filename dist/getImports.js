@@ -17,15 +17,18 @@ const resolvePath = (fileName, parentFile, baseDir) => {
     const isRelative = fileName.startsWith('./');
     const isParent = fileName.startsWith('../');
     if (isRelative) {
-        return path_1.default.resolve(path_1.default.dirname(parentFile), fileName);
+        return path_1.default.join(path_1.default.dirname(parentFile), fileName);
     }
     if (isParent) {
-        const parentDir = path_1.default.dirname(parentFile);
-        const fileNameClipped = fileName.slice(3);
-        // resolve recursively until we find the file
-        return (0, exports.resolvePath)(fileNameClipped, parentDir, baseDir);
+        if (fileName.startsWith('../../')) {
+            throw new Error('Cannot resolve paths above the base directory');
+        }
+        return path_1.default.join(path_1.default.dirname(parentFile), fileName);
     }
-    return '';
+    if (baseDir) {
+        return path_1.default.join(baseDir, fileName);
+    }
+    return fileName;
 };
 exports.resolvePath = resolvePath;
 /**
