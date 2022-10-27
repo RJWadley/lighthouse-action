@@ -73,3 +73,25 @@ test('resolve base paths', () => {
 
   expect(actual).toBe(expected)
 })
+
+/**
+ * resolve absolute paths
+ *
+ * given the following files:
+ * - /Users/username/src/index.ts
+ * - /Users/username/src/folder/one.ts
+ *
+ * and the following import in /Users/username/src/folder/one.ts:
+ * import {one} from '/Users/username/src/index'
+ *
+ * return the path /Users/username/src/index
+ */
+test('resolve absolute paths', () => {
+  const importUrl = '/Users/username/src/index'
+  const parentFile = '/Users/username/src/folder/one.ts'
+  const baseDir = '/Users/username/src'
+  const expected = '/Users/username/src/index'
+  const actual = resolvePath(importUrl, parentFile, baseDir)
+
+  expect(actual).toBe(expected)
+})
