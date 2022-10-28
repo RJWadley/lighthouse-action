@@ -13,6 +13,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const child_process_1 = require("child_process");
+const fs_1 = __importDefault(require("fs"));
 const util_1 = require("util");
 const chrome_launcher_1 = require("chrome-launcher");
 const lighthouse_1 = __importDefault(require("lighthouse"));
@@ -25,14 +26,14 @@ function runComparison(pages, baseBranch, headBranch) {
         yield build();
         const killServer = yield startServer();
         // run lighthouse on the base branch
-        const baseResults = yield runLighthouse(pages);
+        const baseResults = yield runLighthouse(pages, baseBranch);
         killServer();
         // checkout the head branch
         yield checkoutBranch(headBranch);
         yield build();
         const killServer2 = yield startServer();
         // run lighthouse on the head branch
-        const headResults = yield runLighthouse(pages);
+        const headResults = yield runLighthouse(pages, headBranch);
         killServer2();
         // compare the results
         const comparison = compareResults(pages, baseResults, headResults);
@@ -56,7 +57,7 @@ function build() {
         // then resolve when the process exits
         // if exit code is 0, resolve
         // if exit code is not 0, reject
-        const buildProcess = (0, child_process_1.exec)('npm i', {
+        const buildProcess = (0, child_process_1.exec)('npm i ', {
             cwd: WORKING_DIR,
             timeout: 1000 * 60 * 5
         });
@@ -73,22 +74,50 @@ function build() {
         });
     });
 }
-function runLighthouse(pages) {
+function runLighthouse(pages, branch) {
     return __awaiter(this, void 0, void 0, function* () {
-        const results = pages.map(runSingleLighthouse);
+        const results = pages.map(page => runSingleLighthouse(page, branch));
         return Promise.all(results);
     });
 }
-function runSingleLighthouse(pageIn) {
+function runSingleLighthouse(pageIn, branch) {
     return __awaiter(this, void 0, void 0, function* () {
         // eslint doesn't like the lighthouse types
         /* eslint-disable */
         const page = pageIn.replace(/\.[tj]sx?$/, '');
-        const url = `https://localhost:${SERVER_PORT}/${page === 'index' ? '' : page}`;
+        const url = `http://localhost:${SERVER_PORT}/${page === 'index' ? '' : page}`;
         console.log(`running lighthouse on ${page}`);
-        const { lhr } = yield (0, lighthouse_1.default)('https://www.google.com', {
+        const { lhr, report } = yield (0, lighthouse_1.default)(url, {
             output: ['json'],
-            logLevel: 'verbose'
+            logLevel: 'info'
+        });
+        const escapeForCommandLine = (str) => {
+            return str.replace(/"/g, '\\"');
+        };
+        // upload report to github pages
+        const fileName = `${branch}/${page}/index.html`;
+        const ReportGenerator = require('lighthouse/report/generator/report-generator');
+        const reportToWrite = ReportGenerator.generateReport(lhr, 'html');
+        yield execPromise(`
+      (git switch gh-pages || git branch gh-pages)
+      mkdir -p ${branch}
+      mkdir -p ${branch}/${page}
+      rm -f ${fileName}
+    `
+            .trim()
+            .replace(/\n/g, '&&'), {
+            cwd: WORKING_DIR
+        });
+        fs_1.default.writeFileSync(`${WORKING_DIR}${fileName}`, reportToWrite);
+        yield execPromise(`
+      git add ${fileName}
+      git commit -m "add report for ${page} on ${branch}"
+      git push origin gh-pages
+      git switch -
+    `
+            .trim()
+            .replace(/\n/g, '&&'), {
+            cwd: WORKING_DIR
         });
         return {
             performance: lhr.categories.performance.score,

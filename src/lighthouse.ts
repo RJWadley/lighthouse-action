@@ -1,4 +1,5 @@
 import {exec} from 'child_process'
+import fs from 'fs'
 import {promisify} from 'util'
 
 import {Launcher} from 'chrome-launcher'
@@ -29,14 +30,14 @@ export default async function runComparison(
   await build()
   const killServer = await startServer()
   // run lighthouse on the base branch
-  const baseResults = await runLighthouse(pages)
+  const baseResults = await runLighthouse(pages, baseBranch)
   killServer()
   // checkout the head branch
   await checkoutBranch(headBranch)
   await build()
   const killServer2 = await startServer()
   // run lighthouse on the head branch
-  const headResults = await runLighthouse(pages)
+  const headResults = await runLighthouse(pages, headBranch)
   killServer2()
   // compare the results
   const comparison = compareResults(pages, baseResults, headResults)
@@ -57,7 +58,7 @@ function build() {
     // then resolve when the process exits
     // if exit code is 0, resolve
     // if exit code is not 0, reject
-    const buildProcess = exec('npm i', {
+    const buildProcess = exec('npm i ', {
       cwd: WORKING_DIR, // TODO also build
       timeout: 1000 * 60 * 5
     })
@@ -74,22 +75,61 @@ function build() {
   })
 }
 
-async function runLighthouse(pages: string[]): Promise<LighthouseReport[]> {
-  const results = pages.map(page => runSingleLighthouse(page))
+async function runLighthouse(
+  pages: string[],
+  branch: string
+): Promise<LighthouseReport[]> {
+  const results = pages.map(page => runSingleLighthouse(page, branch))
   return Promise.all(results)
 }
 
-async function runSingleLighthouse(pageIn: string): Promise<LighthouseReport> {
+async function runSingleLighthouse(
+  pageIn: string,
+  branch: string
+): Promise<LighthouseReport> {
   // eslint doesn't like the lighthouse types
   /* eslint-disable */
   const page = pageIn.replace(/\.[tj]sx?$/, '')
-  const url = `https://localhost:${SERVER_PORT}/${page === 'index' ? '' : page}`
+  const url = `http://localhost:${SERVER_PORT}/${page === 'index' ? '' : page}`
 
   console.log(`running lighthouse on ${page}`)
-  const {lhr} = await lighthouse('https://www.google.com', {
+  const {lhr, report} = await lighthouse(url, {
     output: ['json'],
-    logLevel: 'verbose'
+    logLevel: 'info'
   })
+
+  // upload report to github pages
+  const fileName = `${branch}/${page}/index.html`
+  const ReportGenerator = require('lighthouse/report/generator/report-generator')
+  const reportToWrite: string = ReportGenerator.generateReport(lhr, 'html')
+
+  await execPromise(
+    `
+      (git switch gh-pages || git branch gh-pages)
+      mkdir -p ${branch}
+      mkdir -p ${branch}/${page}
+      rm -f ${fileName}
+    `
+      .trim()
+      .replace(/\n/g, '&&'),
+    {
+      cwd: WORKING_DIR
+    }
+  )
+  fs.writeFileSync(`${WORKING_DIR}${fileName}`, reportToWrite)
+  await execPromise(
+    `
+      git add ${fileName}
+      git commit -m "add report for ${page} on ${branch}"
+      git push origin gh-pages
+      git switch -
+    `
+      .trim()
+      .replace(/\n/g, '&&'),
+    {
+      cwd: WORKING_DIR
+    }
+  )
 
   return {
     performance: lhr.categories.performance.score,
