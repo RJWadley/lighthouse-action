@@ -43,7 +43,6 @@ const fileExistsWithExtensions = (file) => {
         const ext = exts[i];
         const fileWithExt = `${file}${ext}`;
         const fileExists = fs_1.default.existsSync(fileWithExt);
-        console.log('checking ext', ext, fileWithExt, fileExists);
         if (fileExists)
             return true;
     }

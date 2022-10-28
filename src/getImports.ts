@@ -41,7 +41,6 @@ export const fileExistsWithExtensions = (file: string) => {
     const ext = exts[i]
     const fileWithExt = `${file}${ext}`
     const fileExists = fs.existsSync(fileWithExt)
-    console.log('checking ext', ext, fileWithExt, fileExists)
     if (fileExists) return true
   }
 
